@@ -44,13 +44,12 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
     try {
         await page.goto('https://www.nike.com/ru/launch')
 
-        // console.log({mail, pass, firstName, lastName, birthday, gender})
         await registration()
         await setMobile()
         await browser.close();
 
     } catch (e) {
-        console.error(_colors.red(`${e}`))
+        console.error(_colors.red(`\n${e}`))
         await webhook('Аккаунт не создан')
         await browser.close();
 
@@ -78,6 +77,11 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
 
             await page.click('.joinSubmit.nike-unite-component > input[type="button"]')
             await page.waitForTimeout(9000)
+
+            if (await page.$('input[type="email"]')) {
+                throw new Error;
+            }
+
         } catch (e) {
             throw new Error('Аккаунт не создан')
         }

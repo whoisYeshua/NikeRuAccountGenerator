@@ -22,6 +22,7 @@ const bar1 = new cliProgress.SingleBar({
 })
 
 async function create({mail, pass, firstName, lastName, middleName, addressLine1, addressLine2, city, postCode, phone, cardNumber, cardExpiry, cardCvc}) {
+
     let attempt = 0;
     const width = Math.floor(Math.random() * (1800 - 1025 + 1)) + 1025;
     const height = Math.floor(Math.random() * (1000 - 600 + 1)) + 600;
@@ -72,6 +73,9 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
             await page.type('input[type="password"]', pass);
             await page.click('.loginSubmit  > input[type="button"]')
             await page.waitForTimeout(9000)
+            if (await page.$('input[type="email"]')) {
+                throw new Error;
+            }
         } catch (e) {
             throw new Error('Не удалось войти в аккаунт')
         }
