@@ -3,6 +3,8 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth')
 const LanguagePlugin = require('puppeteer-extra-plugin-stealth/evasions/navigator.languages')
 const fetch = require('node-fetch');
 const fs = require('fs');
+const autoenc = require('node-autodetect-utf8-cp1251-cp866');
+const iconv = require('iconv-lite');
 const neatCsv = require('neat-csv');
 const cliProgress = require('cli-progress');
 const _colors = require('colors');
@@ -200,8 +202,12 @@ function getAcc() {
             if (data.toString().indexOf(';') !== -1) {
                 OPTIONS = {separator: ';'}
             }
+            if (data.toString().indexOf('\t') !== -1) {
+                OPTIONS = {separator: '\t'}
+            }
 
-            const csvData = await neatCsv(data, OPTIONS)
+            const str = iconv.decode(Buffer.from(data), autoenc.detectEncoding(data).encoding)
+            const csvData = await neatCsv(str, OPTIONS)
 
             bar1.start(csvData.length, 0)
 
