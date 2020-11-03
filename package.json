@@ -5,7 +5,7 @@
   "dependencies": {
     "cli-progress": "^3.8.2",
     "colors": "^1.4.0",
-    "iconv-lite": "^0.4.24",
+    "iconv-lite": "^0.6.2",
     "neat-csv": "^5.2.0",
     "node-autodetect-utf8-cp1251-cp866": "^0.1.0",
     "node-fetch": "^2.6.1",
