@@ -15,6 +15,8 @@ const releaseUrl = config.releaseUrl;
 const webhookUrl = config.webhookUrl;
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
+puppeteer.use(StealthPlugin())
+puppeteer.use(lp)
 
 const bar1 = new cliProgress.SingleBar({
     format: `Generator Progress | ${_colors.green('{bar}')} | {percentage}% || {value}/{total}`,
@@ -30,7 +32,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     const height = Math.floor(Math.random() * (1000 - 600 + 1)) + 600;
     const PUPPETEER_OPTIONS = {
         headless: false,
-        slowMo: 150,
+        slowMo: 75,
         defaultViewport: {
             width: width,
             height: height
@@ -38,18 +40,12 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
         args: [`--window-size=${width},${height}`]
     };
 
-    puppeteer.use(lp)
-    puppeteer.use(StealthPlugin())
-
     const browser = await puppeteer.launch(PUPPETEER_OPTIONS);
     const page = await browser.newPage();
 
     try {
         if (releaseUrl) {
-            await page.goto('https://www.nike.com/ru/launch', {waitUntil: 'networkidle2'})
             await login()
-
-            await page.goto(releaseUrl, {waitUntil: 'networkidle2'})
             await addDataToGsPage()
             await page.waitForNavigation({waitUntil: 'networkidle2'})
             await webhook('Данные сохранены')
@@ -63,27 +59,27 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
         console.error(_colors.red(`\n${e}`))
         await webhook('Данные не сохранены')
         await browser.close();
-
+        console.log('Ждем 3 мин')
+        await delay(180000)
     }
 
     async function login() {
         try {
-            await page.waitForTimeout(1000)
-            await page.click('li.member-nav-item.d-sm-ib.va-sm-m > button')
-            await page.waitForTimeout(1000)
+            await page.goto('https://www.nike.com/ru/login', {waitUntil: 'networkidle2'})
             await page.type('input[type="email"]', mail);
             await page.type('input[type="password"]', pass);
+            await page.waitForTimeout(500);
+
             await page.click('.loginSubmit  > input[type="button"]')
-            await page.waitForTimeout(9000)
-            if (await page.$('input[type="email"]')) {
-                throw new Error;
-            }
+            await page.waitForNavigation({waitUntil: 'networkidle2'})
         } catch (e) {
             throw new Error('Не удалось войти в аккаунт')
         }
     }
 
     async function addDataToGsPage() {
+        await page.goto(releaseUrl, {waitUntil: 'networkidle2'});
+
         if (attempt < 2) {
             try {
                 let url = await page.url();
@@ -125,9 +121,8 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
 
                 await page.click('.button-submit')
             } catch (e) {
-                if (e.message === 'Ошибка загрузи страницы') {
+                if (e.message === 'Ошибка загрузи страницы' || e.name === 'TimeoutError') {
                     attempt += 1;
-                    await page.goto(releaseUrl, {waitUntil: 'networkidle2'});
                     await addDataToGsPage();
                 } else {
                     throw e
@@ -221,6 +216,8 @@ function getAcc() {
         })
     })
 }
+
+const delay = ms => new Promise(_ => setTimeout(_, ms));
 
 getAcc().then(value => {
     bar1.stop();

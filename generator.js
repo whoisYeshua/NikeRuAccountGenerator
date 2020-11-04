@@ -15,6 +15,8 @@ const smsToken = config.smsToken;
 const webhookUrl = config.webhookUrl;
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
+puppeteer.use(StealthPlugin())
+puppeteer.use(lp)
 
 const bar1 = new cliProgress.SingleBar({
     format: `Generator Progress | ${_colors.green('{bar}')} | {percentage}% || {value}/{total}`,
@@ -29,7 +31,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
     const height = Math.floor(Math.random() * (1000 - 600 + 1)) + 600;
     const PUPPETEER_OPTIONS = {
         headless: false,
-        slowMo: 150,
+        slowMo: 75,
         defaultViewport: {
             width: width,
             height: height
@@ -37,14 +39,11 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
         args: [`--window-size=${width},${height}`]
     };
 
-    puppeteer.use(lp)
-    puppeteer.use(StealthPlugin())
-
     const browser = await puppeteer.launch(PUPPETEER_OPTIONS);
     const page = await browser.newPage();
 
     try {
-        await page.goto('https://www.nike.com/ru/launch')
+        await page.goto('https://www.nike.com/ru/login', {waitUntil: 'networkidle2'})
 
         await registration()
         await setMobile()
@@ -54,13 +53,13 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
         console.error(_colors.red(`\n${e}`))
         await webhook('Аккаунт не создан')
         await browser.close();
+        console.log('Ждем 3 мин')
+        await delay(180000)
 
     }
 
     async function registration() {
         try {
-            await page.waitForTimeout(1000)
-            await page.click('li.member-nav-item.d-sm-ib.va-sm-m > button')
             await page.click('.loginJoinLink.current-member-signin > a');
             await page.waitForTimeout(2000);
 
@@ -78,12 +77,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
             await page.waitForTimeout(500);
 
             await page.click('.joinSubmit.nike-unite-component > input[type="button"]')
-            await page.waitForTimeout(9000)
-
-            if (await page.$('input[type="email"]')) {
-                throw new Error;
-            }
-
+            await page.waitForNavigation({waitUntil: 'networkidle2'})
         } catch (e) {
             throw new Error('Аккаунт не создан')
         }
@@ -92,8 +86,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
     async function setMobile() {
         if (smsToken && attempt < 3) {
             try {
-                await page.goto('https://www.nike.com/ru/member/settings')
-                await page.waitForTimeout(8000)
+                await page.goto('https://www.nike.com/ru/member/settings', {waitUntil: 'networkidle2'})
 
                 await page.click('.mex-mobile-phone > div > div > button')
                 let [id, number] = await accessToCheapSms()
@@ -322,6 +315,8 @@ function getAcc() {
         })
     })
 }
+
+const delay = ms => new Promise(_ => setTimeout(_, ms));
 
 getAcc().then(value => {
     bar1.stop();
