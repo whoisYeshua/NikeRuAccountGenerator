@@ -1,6 +1,7 @@
-const puppeteer = require('puppeteer-extra')
-const StealthPlugin = require('puppeteer-extra-plugin-stealth')
-const LanguagePlugin = require('puppeteer-extra-plugin-stealth/evasions/navigator.languages')
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const LanguagePlugin = require('puppeteer-extra-plugin-stealth/evasions/navigator.languages');
+const pluginProxy = require('puppeteer-extra-plugin-proxy');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const autoenc = require('node-autodetect-utf8-cp1251-cp866');
@@ -10,7 +11,8 @@ const cliProgress = require('cli-progress');
 const _colors = require('colors');
 const config = require('./config.json');
 
-const filePath = 'csv/gs-accs.csv';
+const csvPath = 'csv/gs-accs.csv';
+const proxyPath = 'proxy.txt';
 const releaseUrl = config.releaseUrl;
 const webhookUrl = config.webhookUrl;
 
@@ -25,9 +27,9 @@ const bar1 = new cliProgress.SingleBar({
     hideCursor: true
 })
 
-async function create({mail, pass, firstName, lastName, middleName, addressLine1, addressLine2, city, postCode, phone, cardNumber, cardExpiry, cardCvc}) {
-
-    let attempt = 0;
+async function create({mail, pass, firstName, lastName, middleName, addressLine1, addressLine2, city, postCode, phone, cardNumber, cardExpiry, cardCvc}, proxy) {
+    let loginAttempts = 0;
+    let gsAttempts = 0;
     const width = Math.floor(Math.random() * (1800 - 1025 + 1)) + 1025;
     const height = Math.floor(Math.random() * (1000 - 600 + 1)) + 600;
     const PUPPETEER_OPTIONS = {
@@ -39,6 +41,18 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
         },
         args: [`--window-size=${width},${height}`]
     };
+
+    if (proxy) {
+        let {proxyIp, proxyPort, proxyUsername, proxyPassword} = proxy;
+        puppeteer.use(pluginProxy({
+            address: proxyIp,
+            port: proxyPort,
+            credentials: {
+                username: proxyUsername,
+                password: proxyPassword,
+            }
+        }));
+    }
 
     const browser = await puppeteer.launch(PUPPETEER_OPTIONS);
     const page = await browser.newPage();
@@ -73,14 +87,19 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
             await page.click('.loginSubmit  > input[type="button"]')
             await page.waitForNavigation({waitUntil: 'networkidle2'})
         } catch (e) {
-            throw new Error('Не удалось войти в аккаунт')
+            if (e.name === 'TimeoutError') {
+                await reLogin();
+            }
+            if (e.message === 'Повторный вход не сработал') {
+                throw e;
+            }
         }
     }
 
     async function addDataToGsPage() {
         await page.goto(releaseUrl, {waitUntil: 'networkidle2'});
 
-        if (attempt < 2) {
+        if (gsAttempts < 2) {
             try {
                 let url = await page.url();
                 url = new URL(url)
@@ -122,7 +141,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
                 await page.click('.button-submit')
             } catch (e) {
                 if (e.message === 'Ошибка загрузи страницы' || e.name === 'TimeoutError') {
-                    attempt += 1;
+                    gsAttempts += 1;
                     await addDataToGsPage();
                 } else {
                     throw e
@@ -132,8 +151,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
             throw new Error('Количество попыток на вход в gs.nike превышено')
         }
     }
-
-
+    
     async function webhook(title) {
         if (webhookUrl) {
             let webhookData = createWebhookData(mail, pass, title)
@@ -141,6 +159,26 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
         }
     }
 
+    async function reLogin() {
+        try {
+            loginAttempts++;
+            await page.click('.nike-unite-error-close > input[type="button"]')
+            await page.waitForTimeout(500)
+
+            await page.type('input[type="password"]', pass);
+            await page.waitForTimeout(500);
+
+            await page.click('.loginSubmit > input[type="button"]')
+            await page.waitForNavigation({waitUntil: 'networkidle2'})
+
+        } catch (e) {
+            if (e.name === 'TimeoutError' && loginAttempts < 4) {
+                await reLogin();
+            } else {
+                throw new Error('Повторный вход не сработал')
+            }
+        }
+    }
 }
 
 function createWebhookData(mail, pass, title) {
@@ -184,11 +222,34 @@ async function sendWebhook(webhookUrl, webhookData) {
     }
 }
 
+function getProxy(i) {
+    return new Promise(function (resolve, reject) {
+        fs.readFile(proxyPath, function (err, data) {
+            if (err) throw err;
+
+            const str = iconv.decode(Buffer.from(data), autoenc.detectEncoding(data).encoding)
+            if (str !== '') {
+                let proxies = str.toString().split('\r\n')
+                let [proxyIp, proxyPort, proxyUsername, proxyPassword] = proxies[i % proxies.length].split(':')
+                let proxy = {
+                    proxyIp: proxyIp,
+                    proxyPort: proxyPort,
+                    proxyUsername: proxyUsername,
+                    proxyPassword: proxyPassword
+                }
+                resolve(proxy)
+            } else {
+                reject()
+            }
+        });
+    })
+}
+
 function getAcc() {
     let OPTIONS = {};
 
     return new Promise(function (resolve) {
-        fs.readFile(filePath, async (err, data) => {
+        fs.readFile(csvPath, async (err, data) => {
             if (err) {
                 console.error(err)
                 return
@@ -208,7 +269,12 @@ function getAcc() {
 
             for (let i in csvData) {
                 bar1.update(parseInt(i))
-                await create(csvData[i])
+                try {
+                    const proxy = await getProxy(i)
+                    await create(csvData[i], proxy)
+                } catch {
+                    await create(csvData[i])
+                }
             }
 
             bar1.update(csvData.length)

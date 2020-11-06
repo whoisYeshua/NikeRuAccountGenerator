@@ -1,6 +1,7 @@
-const puppeteer = require('puppeteer-extra')
-const StealthPlugin = require('puppeteer-extra-plugin-stealth')
-const LanguagePlugin = require('puppeteer-extra-plugin-stealth/evasions/navigator.languages')
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const LanguagePlugin = require('puppeteer-extra-plugin-stealth/evasions/navigator.languages');
+const pluginProxy = require('puppeteer-extra-plugin-proxy');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const autoenc = require('node-autodetect-utf8-cp1251-cp866');
@@ -10,7 +11,8 @@ const cliProgress = require('cli-progress');
 const _colors = require('colors');
 const config = require('./config.json');
 
-const filePath = 'csv/accs.csv';
+const csvPath = 'csv/accs.csv';
+const proxyPath = 'proxy.txt';
 const smsToken = config.smsToken;
 const webhookUrl = config.webhookUrl;
 
@@ -25,8 +27,9 @@ const bar1 = new cliProgress.SingleBar({
 })
 
 
-async function create({mail, pass, firstName, lastName, birthday, gender}) {
-    let attempt = 0;
+async function create({mail, pass, firstName, lastName, birthday, gender}, proxy) {
+    let joinAttempts = 0;
+    let phoneAttempts = 0;
     const width = Math.floor(Math.random() * (1800 - 1025 + 1)) + 1025;
     const height = Math.floor(Math.random() * (1000 - 600 + 1)) + 600;
     const PUPPETEER_OPTIONS = {
@@ -38,6 +41,18 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
         },
         args: [`--window-size=${width},${height}`]
     };
+
+    if (proxy) {
+        let {proxyIp, proxyPort, proxyUsername, proxyPassword} = proxy;
+        puppeteer.use(pluginProxy({
+            address: proxyIp,
+            port: proxyPort,
+            credentials: {
+                username: proxyUsername,
+                password: proxyPassword,
+            }
+        }));
+    }
 
     const browser = await puppeteer.launch(PUPPETEER_OPTIONS);
     const page = await browser.newPage();
@@ -69,22 +84,28 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
             await page.type('.lastName.nike-unite-component.empty > input[type="text"]', lastName);
             await page.type('input[type="date"]', birthday);
             if (gender === 'M') {
-                await page.click('li:nth-child(1) > input[type="button"]')
+                await page.click('li:nth-child(1) > input[type="button"]');
             } else {
-                await page.click('li:nth-child(2) > input[type="button"]')
+                await page.click('li:nth-child(2) > input[type="button"]');
             }
-            await page.click('.checkbox')
+            await page.click('.checkbox');
             await page.waitForTimeout(500);
 
             await page.click('.joinSubmit.nike-unite-component > input[type="button"]')
             await page.waitForNavigation({waitUntil: 'networkidle2'})
+
         } catch (e) {
-            throw new Error('Аккаунт не создан')
+            if (e.name === 'TimeoutError') {
+                await reLogin();
+            }
+            if (e.message === 'Повторный вход не сработал') {
+                throw e;
+            }
         }
     }
 
     async function setMobile() {
-        if (smsToken && attempt < 3) {
+        if (smsToken && phoneAttempts < 3) {
             try {
                 await page.goto('https://www.nike.com/ru/member/settings', {waitUntil: 'networkidle2'})
 
@@ -109,7 +130,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
                 // await page.screenshot({path: `screenshots/screen-${time}-${mail.slice(0, atPosition)}.png`})
             } catch (e) {
                 console.error(_colors.red(`\n${e}`))
-                attempt += 1;
+                phoneAttempts += 1;
                 await setMobile();
             }
         } else {
@@ -121,6 +142,27 @@ async function create({mail, pass, firstName, lastName, birthday, gender}) {
         if (webhookUrl) {
             let webhookData = createWebhookData(mail, pass, title)
             await sendWebhook(webhookUrl, webhookData)
+        }
+    }
+
+    async function reLogin() {
+        try {
+            joinAttempts++;
+            await page.click('.nike-unite-error-close > input[type="button"]')
+            await page.waitForTimeout(500)
+
+            await page.click('.checkbox')
+            await page.waitForTimeout(500);
+
+            await page.click('.joinSubmit.nike-unite-component > input[type="button"]')
+            await page.waitForNavigation({waitUntil: 'networkidle2'})
+            
+        } catch (e) {
+            if (e.name === 'TimeoutError' && joinAttempts < 4) {
+                await reLogin();
+            } else {
+                throw new Error('Повторный вход не сработал')
+            }
         }
     }
 
@@ -283,11 +325,34 @@ async function sendWebhook(webhookUrl, webhookData) {
     }
 }
 
+function getProxy(i) {
+    return new Promise(function (resolve, reject) {
+        fs.readFile(proxyPath, function (err, data) {
+            if (err) throw err;
+
+            const str = iconv.decode(Buffer.from(data), autoenc.detectEncoding(data).encoding)
+            if (str !== '') {
+                let proxies = str.toString().split('\r\n')
+                let [proxyIp, proxyPort, proxyUsername, proxyPassword] = proxies[i % proxies.length].split(':')
+                let proxy = {
+                    proxyIp: proxyIp,
+                    proxyPort: proxyPort,
+                    proxyUsername: proxyUsername,
+                    proxyPassword: proxyPassword
+                }
+                resolve(proxy)
+            } else {
+                reject()
+            }
+        });
+    })
+}
+
 function getAcc() {
     let OPTIONS = {};
 
     return new Promise(function (resolve) {
-        fs.readFile(filePath, async (err, data) => {
+        fs.readFile(csvPath, async (err, data) => {
             if (err) {
                 console.error(err)
                 return
@@ -307,7 +372,12 @@ function getAcc() {
 
             for (let i in csvData) {
                 bar1.update(parseInt(i))
-                await create(csvData[i])
+                try {
+                    const proxy = await getProxy(i)
+                    await create(csvData[i], proxy)
+                } catch {
+                    await create(csvData[i])
+                }
             }
 
             bar1.update(csvData.length)
