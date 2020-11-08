@@ -10,11 +10,14 @@ const neatCsv = require('neat-csv');
 const cliProgress = require('cli-progress');
 const _colors = require('colors');
 const config = require('./config.json');
-
+const cheapSmsToken = config.cheapSms;
+const smsActivate = config.smsActivate;
+const getSmsToken = config.getSms;
+const webhookUrl = config.webhookUrl;
 const csvPath = 'csv/accs.csv';
 const proxyPath = 'proxy.txt';
-const smsToken = config.smsToken;
-const webhookUrl = config.webhookUrl;
+
+const {MajorLoginError, ReLoginError, AccountExistsError, MajorSmsError, BalanceError, StockError, ConnectionError, MinorSmsError, BuyError, WaitCodeError} = require('./lib/errors')
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
 puppeteer.use(StealthPlugin())
@@ -26,10 +29,48 @@ const bar1 = new cliProgress.SingleBar({
     barIncompleteChar: '\u2591'
 })
 
+let service = [];
+if (cheapSmsToken) {
+    service.push({
+        hostname: 'cheapsms.pro',
+        product: 'nk',
+        requiredNumbers: 5,
+        price: 1,
+        prefixLength: 2,
+        cancelCode: -1,
+        completeCode: 6,
+        token: cheapSmsToken
+    })
+}
+if (smsActivate) {
+    service.push({
+        hostname: 'sms-activate.ru',
+        product: 'ew',
+        requiredNumbers: 1,
+        price: 6,
+        prefixLength: 1,
+        cancelCode: 8,
+        completeCode: 6,
+        token: smsActivate
+    })
+}
+if (getSmsToken) {
+    service.push({
+        hostname: 'api.getsms.online',
+        product: 'ot',
+        requiredNumbers: 1,
+        price: 2,
+        prefixLength: 2,
+        cancelCode: -1,
+        completeCode: 6,
+        token: getSmsToken
+    })
+}
 
 async function create({mail, pass, firstName, lastName, birthday, gender}, proxy) {
     let joinAttempts = 0;
     let phoneAttempts = 0;
+    let copyService = Object.assign([], service);
     const width = Math.floor(Math.random() * (1800 - 1025 + 1)) + 1025;
     const height = Math.floor(Math.random() * (1000 - 600 + 1)) + 600;
     const PUPPETEER_OPTIONS = {
@@ -66,11 +107,16 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
 
     } catch (e) {
         console.error(_colors.red(`\n${e}`))
-        await webhook('Аккаунт не создан')
+        if (e instanceof AccountExistsError) {
+            await webhook(e.message)
+        } else {
+            await webhook('Аккаунт не создан')
+        }
         await browser.close();
-        console.log('Ждем 3 мин')
-        await delay(180000)
-
+        if (e instanceof ReLoginError) {
+            console.log('Ждем 3 мин')
+            await delay(180000)
+        }
     }
 
     async function registration() {
@@ -80,6 +126,10 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
 
             await page.type('input[type="email"]', mail);
             await page.type('input[type="password"]', pass);
+            let check = await page.$('.dublicate-email');
+            if (await page.$('.duplicate-email')) {
+                throw new AccountExistsError();
+            }
             await page.type('.firstName.nike-unite-component.empty > input[type="text"]', firstName);
             await page.type('.lastName.nike-unite-component.empty > input[type="text"]', lastName);
             await page.type('input[type="date"]', birthday);
@@ -97,24 +147,23 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
         } catch (e) {
             if (e.name === 'TimeoutError') {
                 await reLogin();
-            }
-            if (e.message === 'Повторный вход не сработал') {
+            } else {
                 throw e;
             }
         }
     }
 
     async function setMobile() {
-        if (smsToken && phoneAttempts < 3) {
-            try {
+        try {
+            if (copyService.length > 0 && phoneAttempts < 3) {
                 await page.goto('https://www.nike.com/ru/member/settings', {waitUntil: 'networkidle2'})
 
                 await page.click('.mex-mobile-phone > div > div > button')
-                let [id, number] = await accessToCheapSms()
+                let [id, number] = await accessToSmsService(copyService);
 
                 await page.type('div.sendCode > div.mobileNumber-div > input', number)
                 await page.click('#nike-unite-progressiveForm > div > div > input[type="button"]')
-                let code = await getCode(id)
+                let code = await getCode(copyService[0], id)
 
                 await page.type('.verifyCode > input', code)
                 await page.click('label.checkbox')
@@ -128,13 +177,21 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
                 // const time = new Date().toISOString().slice(11, 19).replace(/:/g, '-')
                 // const atPosition = mail.indexOf('@')
                 // await page.screenshot({path: `screenshots/screen-${time}-${mail.slice(0, atPosition)}.png`})
-            } catch (e) {
-                console.error(_colors.red(`\n${e}`))
+            } else {
+                if (phoneAttempts >= 3) {
+                    throw new Error('Превышено количество попыток ввода номера')
+                } else if (copyService.length < 1) {
+                    throw new Error('API ключи для SMS сервисов не установлены')
+                }
+            }
+        } catch (e) {
+            console.error(_colors.red(`\n${e.message}`))
+            if (e instanceof MinorSmsError || e.name === 'TimeoutError') {
                 phoneAttempts += 1;
                 await setMobile();
+            } else {
+                await webhook('Аккаунт создан, но номер телефона не подтвержден')
             }
-        } else {
-            await webhook('Аккаунт создан, но номер телефона не подтвержден')
         }
     }
 
@@ -161,130 +218,148 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
             if (e.name === 'TimeoutError' && joinAttempts < 4) {
                 await reLogin();
             } else {
-                throw new Error('Повторный вход не сработал')
+                throw new ReLoginError()
             }
         }
     }
-
 }
 
-async function accessToCheapSms() {
-    if (await checkAvailableNumbers() && await checkAvailableBalance()) {
-        return await getNumber()
+async function accessToSmsService(service) {
+    try {
+        if (await Promise.all([
+            checkAvailableNumbers(service[0]),
+            checkAvailableBalance(service[0])
+        ])) {
+            return await getNumber(service[0])
+        }
+    } catch (e) {
+        console.error(_colors.red(`\n${e.message}`));
+        if (e instanceof MinorSmsError) {
+            await delay(5000);
+            return await accessToSmsService(service)
+        } else {
+            service.shift();
+            if (service.length > 0) {
+                return await accessToSmsService(service)
+            } else {
+                throw new Error('Все указанные SMS сервисы недоступны');
+            }
+        }
     }
 }
 
-function getCode(id) {
-    let delay = 20000;
+async function checkAvailableBalance(service) {
+    let response = await fetch(`http://${service.hostname}/stubs/handler_api.php?api_key=${service.token}&action=getBalance`)
+    let responseText = await response.text()
+    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL' || responseText === 'BAD_ACTION' || responseText === 'NO_ACTION' || responseText === 'NO_KEY') {
+        throw new ConnectionError(service.hostname, responseText);
+    } else {
+        if (parseInt(responseText.slice(15)) > service.price) {
+            return true
+        } else {
+            throw new BalanceError(service.hostname);
+        }
+    }
+}
+
+async function checkAvailableNumbers(service) {
+    let response = await fetch(`http://${service.hostname}/stubs/handler_api.php?api_key=${service.token}&action=getNumbersStatus&country=ru`)
+    let responseText = await response.text()
+    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL' || responseText === 'BAD_ACTION' || responseText === 'NO_ACTION' || responseText === 'NO_KEY') {
+        throw new ConnectionError(service.hostname, responseText)
+    } else {
+        let numStock = JSON.parse(responseText);
+        if (numStock[`${service.product}_0`] >= service.requiredNumbers) {
+            return true
+        } else {
+            throw new StockError(service.hostname);
+        }
+    }
+}
+
+async function getNumber(service) {
+    let response = await fetch(`http://${service.hostname}/stubs/handler_api.php?api_key=${service.token}&action=getNumber&service=${service.product}`);
+    let responseText = await response.text();
+    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL' || responseText === 'BAD_ACTION' || responseText === 'NO_ACTION' || responseText === 'NO_KEY' ||
+        responseText === 'BAD_SERVICE' || responseText === 'BAD_COUNTRY') {
+        throw new ConnectionError(service.hostname, responseText);
+    } else if (responseText === 'NO_NUMBERS' || responseText === 'NO_NUMBER') {
+        throw new BalanceError(service.hostname);
+    } else if (responseText === 'NO_BALANC' || responseText === 'NO_MEANS') {
+        throw new StockError(service.hostname);
+    } else if (responseText === 'Ошибка покупки') {
+        throw new BuyError(service.hostname);
+    } else if (responseText.split(':')[0] === 'ACCESS_NUMBER') {
+        let [, id, number] = responseText.split(':');
+        number = number.slice(service.prefixLength);
+        return [id, number]
+    } else {
+        throw new Error(`Ошибка на ${service.hostname} - ${responseText}`)
+    }
+}
+
+function getCode(service, id) {
+    let timerDelay = 20000;
     let start = Date.now();
     return new Promise((resolve, reject) => {
         let timerId = setTimeout(async function checkCode() {
             try {
-                let code = await checkNumberStatus(id);
+                let code = await checkNumberStatus(service, id);
                 if (code === 'Ожидание смс') {
                     if (Date.now() - start < 180000) {
-                        delay += 10000;
-                        timerId = setTimeout(checkCode, delay);
+                        timerDelay += 10000;
+                        timerId = setTimeout(checkCode, timerDelay);
                     } else {
-                        await ChangeNumberStatus(id, -1)
-                        reject('Превышено время ожидания, отменяем номер')
+                        await ChangeNumberStatus(service, id, service.cancelCode)
+                        throw new WaitCodeError(service.hostname)
                     }
                 } else {
-                    await ChangeNumberStatus(id, 6)
+                    await ChangeNumberStatus(service, id, service.completeCode)
                     resolve(code)
                 }
             } catch (e) {
-                reject(e.message)
+                reject(e)
             }
-        }, delay)
+        }, timerDelay)
     })
 }
 
-async function checkAvailableBalance() {
-    let response = await fetch(`http://cheapsms.pro/stubs/handler_api.php?api_key=${smsToken}&action=getBalance`)
-    let responseText = await response.text()
-    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL') {
-        throw new Error(`Причина ошибки на подключение к cheapsms: ${responseText}`)
-    } else {
-        if (parseInt(responseText.slice(15)) > 1) {
-            return true
-        } else {
-            throw new Error('Недостаточный баланс')
-        }
-    }
-}
-
-async function checkAvailableNumbers() {
-    let response = await fetch(`http://cheapsms.pro/stubs/handler_api.php?api_key=${smsToken}&action=getNumbersStatus&country=$country`)
-    let responseText = await response.text()
-    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL') {
-        throw new Error(`Причина ошибки на подключение к cheapsms: ${responseText}`)
-    } else {
-        let numStock = JSON.parse(responseText)
-        if (numStock['nk_0'] > 0) {
-            return true
-        } else {
-            throw new Error('Нет доступных номеров Nike, поменяйте проверку на доступность номеров и запрос на Сервис: \"Нет в списке\" - ot_0 ')
-        }
-    }
-}
-
-async function getNumber() {
-    let response = await fetch(`http://cheapsms.pro/stubs/handler_api.php?api_key=${smsToken}&action=getNumber&service=nk_0`);
-    let responseText = await response.text();
-    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL') {
-        throw new Error(`Причина ошибки на подключение к cheapsms: ${responseText}`)
-    } else {
-        if (responseText === 'NO_NUMBERS') {
-            throw new Error('Нет доступных номеров Nike, поменяйте проверку на доступность номеров и запрос на Сервис: \"Нет в списке\" - ot_0 ');
-        } else if (responseText === 'NO_BALANC') {
-            throw new Error('Недостаточный баланс')
-        } else if (responseText === 'Ошибка покупки') {
-            throw new Error('Ошибка покупки - какая-то ошибка на подключение к API, либо проблема на стороне сервиса')
-        } else {
-            let [, id, number] = responseText.split(':')
-            number = number.slice(2)
-            return [id, number]
-        }
-    }
-}
-
-async function checkNumberStatus(id) {
-    let response = await fetch(`http://cheapsms.pro/stubs/handler_api.php?api_key=${smsToken}&action=getStatus&id=${id}`);
-    let responseText = await response.text();
-    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL' || responseText === 'NO_ACTIVATION') {
-        throw new Error(`Ошибка от сервиса: ${responseText}`)
-    } else {
-        if (responseText === 'STATUS_WAIT_CODE') {
-            return 'Ожидание смс'
-        } else if (responseText === 'STATUS_CANCEL') {
-            console.log('Активация отменена')
-        } else {
-            let [, code] = responseText.split(':')
-            return code
-        }
-    }
-}
-
-async function ChangeNumberStatus(id, status) {
-    let response = await fetch(`http://cheapsms.pro/stubs/handler_api.php?api_key=${smsToken}&action=setStatus&status=${status}&id=${id}&forward=$forward`);
+async function checkNumberStatus(service, id) {
+    let response = await fetch(`http://${service.hostname}/stubs/handler_api.php?api_key=${service.token}&action=getStatus&id=${id}`);
     let responseText = await response.text();
     if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL' || responseText === 'NO_ACTIVATION' || responseText === 'BAD_STATUS') {
-        throw new Error(`Ошибка от сервиса: ${responseText}`)
+        throw new ConnectionError(service.hostname, responseText);
+    } else if (responseText === 'STATUS_WAIT_CODE') {
+        return 'Ожидание смс'
+    } else if (responseText === 'STATUS_CANCEL') {
+        throw new Error(`${service.hostname}: Активация отменена`)
+    } else if (responseText === 'STATUS_ERROR_NUMBER') {
+        throw new Error(`Ошибка от сервиса ${service.hostname}: Проблемы с номером`)
+    } else if (responseText === 'STATUS_ERROR_SERVICE') {
+        throw new Error(`Ошибка от сервиса ${service.hostname}: SMS приходят не от того сервиса, что заказан. Активация отменена`)
+    } else if (responseText.split(':')[0] === 'STATUS_OK') {
+        let [, code] = responseText.split(':')
+        return code
     } else {
-        if (responseText === 'ACCESS_ACTIVATION') {
-            console.log('\nСервис успешно активирован')
-        } else if (responseText === 'ACCESS_CANCEL') {
-            console.log('\nАктивация отменена')
-        } else {
-            // console.log(responseText)
-        }
+        throw new Error(`Ответ от сервиса ${service.hostname}: ${responseText}`)
+    }
+}
+
+async function ChangeNumberStatus(service, id, status) {
+    let response = await fetch(`http://${service.hostname}/stubs/handler_api.php?api_key=${service.token}&action=setStatus&status=${status}&id=${id}`);
+    let responseText = await response.text();
+    if (responseText === 'BAD_KEY' || responseText === 'ERROR_SQL' || responseText === 'NO_ACTIVATION' || responseText === 'BAD_STATUS') {
+        console.log(`\nОшибка от сервиса ${service.hostname} при попытке отмены \ подтверждения номера: ${responseText} - не влияет на функционал`)
+    } else if (responseText === 'ACCESS_ACTIVATION') {
+        // console.log('\nСервис успешно активирован')
+    } else if (responseText === 'ACCESS_CANCEL') {
+        // console.log('\nАктивация отменена')
     }
 }
 
 function createWebhookData(mail, pass, title) {
     let color;
-    if (title === 'Аккаунт не создан') {
+    if (title === 'Аккаунт не создан' || title === 'Аккаунт уже существует') {
         color = 13239043;
     } else if (title === 'Аккаунт создан') {
         color = 248362;
@@ -310,18 +385,22 @@ function createWebhookData(mail, pass, title) {
 }
 
 async function sendWebhook(webhookUrl, webhookData) {
-    let response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json;charset=utf-8'
-        },
-        body: JSON.stringify(webhookData)
-    })
+    try {
+        let response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json;charset=utf-8'
+            },
+            body: JSON.stringify(webhookData)
+        })
 
-    if (response.ok) {
-        return 'Вебхук отправлен'
-    } else {
-        return `${response.status}`
+        if (response.ok) {
+            return 'Вебхук отправлен'
+        } else {
+            throw new Error(`Webhook не отправлен, статус - ${response.status}`)
+        }
+    } catch (e) {
+        console.error(_colors.red(`\n${e.message}`))
     }
 }
 

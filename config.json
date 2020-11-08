@@ -1,5 +1,7 @@
 {
-  "smsToken" : "",
-  "webhookUrl" : "",
+  "cheapSms": "",
+  "smsActivate": "",
+  "getSms": "",
+  "webhookUrl": "",
   "releaseUrl": ""
 }
