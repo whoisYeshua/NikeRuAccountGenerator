@@ -10,11 +10,12 @@ const neatCsv = require('neat-csv');
 const cliProgress = require('cli-progress');
 const _colors = require('colors');
 const config = require('./config.json');
-
-const csvPath = 'csv/gs-accs.csv';
-const proxyPath = 'proxy.txt';
 const releaseUrl = config.releaseUrl;
 const webhookUrl = config.webhookUrl;
+const csvPath = 'csv/gs-accs.csv';
+const proxyPath = 'proxy.txt';
+
+const {MajorLoginError, ReLoginError} = require('./lib/errors')
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
 puppeteer.use(StealthPlugin())
@@ -73,8 +74,10 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
         console.error(_colors.red(`\n${e}`))
         await webhook('Данные не сохранены')
         await browser.close();
-        console.log('Ждем 3 мин')
-        await delay(180000)
+        if (e instanceof ReLoginError) {
+            console.log('Ждем 3 мин')
+            await delay(180000)
+        }
     }
 
     async function login() {
@@ -89,8 +92,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
         } catch (e) {
             if (e.name === 'TimeoutError') {
                 await reLogin();
-            }
-            if (e.message === 'Повторный вход не сработал') {
+            } else {
                 throw e;
             }
         }
@@ -175,7 +177,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
             if (e.name === 'TimeoutError' && loginAttempts < 4) {
                 await reLogin();
             } else {
-                throw new Error('Повторный вход не сработал')
+                throw new ReLoginError()
             }
         }
     }

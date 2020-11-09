@@ -126,8 +126,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
 
             await page.type('input[type="email"]', mail);
             await page.type('input[type="password"]', pass);
-            let check = await page.$('.dublicate-email');
-            if (await page.$('.duplicate-email')) {
+            if (await page.$eval('.duplicate-email', el => el.style.display) === 'block') {
                 throw new AccountExistsError();
             }
             await page.type('.firstName.nike-unite-component.empty > input[type="text"]', firstName);
