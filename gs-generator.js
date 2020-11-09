@@ -15,7 +15,7 @@ const webhookUrl = config.webhookUrl;
 const csvPath = 'csv/gs-accs.csv';
 const proxyPath = 'proxy.txt';
 
-const {MajorLoginError, ReLoginError} = require('./lib/errors')
+const {MajorLoginError, ReLoginError, MajorGsError, NumberNotConfirmed} = require('./lib/errors')
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
 puppeteer.use(StealthPlugin())
@@ -101,12 +101,16 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     async function addDataToGsPage() {
         await page.goto(releaseUrl, {waitUntil: 'networkidle2'});
 
+
         if (gsAttempts < 3) {
             try {
                 let url = await page.url();
                 url = new URL(url)
                 if (url.pathname === '/404' || url.pathname === '/error') {
                     throw new Error('Ошибка загрузи страницы')
+                }
+                if (await page.$('div.sendCode > div.mobileNumber-div > input')) {
+                    throw new NumberNotConfirmed()
                 }
                 await page.waitForSelector('#firstName');
                 await page.type('#firstName', firstName);
@@ -280,7 +284,7 @@ function getAcc() {
             }
 
             bar1.update(csvData.length)
-            resolve('\nПроцесс завершен')
+            resolve('Процесс завершен')
         })
     })
 }
@@ -289,7 +293,7 @@ const delay = ms => new Promise(_ => setTimeout(_, ms));
 
 getAcc().then(value => {
     bar1.stop();
-    console.log(_colors.green(`${value}`))
+    console.log(_colors.green(`\n\n${value}`))
 }).catch(e => {
     console.error(e)
     bar1.stop();

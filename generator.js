@@ -460,7 +460,7 @@ function getAcc() {
             }
 
             bar1.update(csvData.length)
-            resolve('\nПроцесс завершен')
+            resolve('Процесс завершен')
         })
     })
 }
@@ -469,7 +469,7 @@ const delay = ms => new Promise(_ => setTimeout(_, ms));
 
 getAcc().then(value => {
     bar1.stop();
-    console.log(_colors.green(`${value}`))
+    console.log(_colors.green(`\n\n${value}`))
 }).catch(e => {
     console.error(e)
     bar1.stop();
