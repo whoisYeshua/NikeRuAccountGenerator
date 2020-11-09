@@ -157,6 +157,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
             if (copyService.length > 0 && phoneAttempts < 3) {
                 await page.goto('https://www.nike.com/ru/member/settings', {waitUntil: 'networkidle2'})
 
+                await page.waitForSelector('.mex-mobile-phone > div > div > button')
                 await page.click('.mex-mobile-phone > div > div > button')
                 let [id, number] = await accessToSmsService(copyService);
 
@@ -172,10 +173,6 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
                 await page.waitForTimeout(2000)
 
                 await webhook('Аккаунт создан')
-                // Раскомментируй эти строки и создай в этой директории папку screenshots, если нужно чтобы скрипт сохранял скрины
-                // const time = new Date().toISOString().slice(11, 19).replace(/:/g, '-')
-                // const atPosition = mail.indexOf('@')
-                // await page.screenshot({path: `screenshots/screen-${time}-${mail.slice(0, atPosition)}.png`})
             } else {
                 if (phoneAttempts >= 3) {
                     throw new Error('Превышено количество попыток ввода номера')
@@ -189,6 +186,10 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
                 phoneAttempts += 1;
                 await setMobile();
             } else {
+                // Раскомментируй эти строки и создай в этой директории папку screenshots, если нужно чтобы скрипт сохранял скрины
+                // const time = new Date().toISOString().slice(11, 19).replace(/:/g, '-')
+                // const atPosition = mail.indexOf('@')
+                // await page.screenshot({path: `screenshots/screen-${time}-${mail.slice(0, atPosition)}.png`})
                 await webhook('Аккаунт создан, но номер телефона не подтвержден')
             }
         }
