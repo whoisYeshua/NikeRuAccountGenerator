@@ -101,7 +101,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     async function addDataToGsPage() {
         await page.goto(releaseUrl, {waitUntil: 'networkidle2'});
 
-        if (gsAttempts < 2) {
+        if (gsAttempts < 3) {
             try {
                 let url = await page.url();
                 url = new URL(url)
