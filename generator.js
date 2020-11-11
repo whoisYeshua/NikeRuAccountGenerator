@@ -18,6 +18,7 @@ const csvPath = 'csv/accs.csv';
 const proxyPath = 'proxy.txt';
 
 const {MajorLoginError, ReLoginError, AccountExistsError, MajorSmsError, BalanceError, StockError, ConnectionError, MinorSmsError, BuyError, WaitCodeError} = require('./lib/errors')
+const {createSuccessWebhookData, createUnsuccessWebhookData, sendWebhook} = require('./lib/discordWebhook')
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
 puppeteer.use(StealthPlugin())
@@ -107,11 +108,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
 
     } catch (e) {
         console.error(_colors.red(`\n${e}`))
-        if (e instanceof AccountExistsError) {
-            await webhook(e.message)
-        } else {
-            await webhook('Аккаунт не создан')
-        }
+        await unsuccessWebhook(e.message)
         await browser.close();
         if (e instanceof ReLoginError) {
             console.log('Ждем 3 мин')
@@ -172,7 +169,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
                 await page.click('#nike-unite-progressiveForm > div > input[type="button"]')
                 await page.waitForTimeout(2000)
 
-                await webhook('Аккаунт создан')
+                await successWebhook()
             } else {
                 if (phoneAttempts >= 3) {
                     throw new Error('Превышено количество попыток ввода номера')
@@ -190,15 +187,29 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
                 // const time = new Date().toISOString().slice(11, 19).replace(/:/g, '-')
                 // const atPosition = mail.indexOf('@')
                 // await page.screenshot({path: `screenshots/screen-${time}-${mail.slice(0, atPosition)}.png`})
-                await webhook('Аккаунт создан, но номер телефона не подтвержден')
+                await semisuccessWebhook(e.message)
             }
         }
     }
 
-    async function webhook(title) {
+    async function successWebhook() {
         if (webhookUrl) {
-            let webhookData = createWebhookData(mail, pass, title)
+            let webhookData = createSuccessWebhookData(mail, pass, 'Аккаунт создан')
             await sendWebhook(webhookUrl, webhookData)
+        }
+    }
+
+    async function semisuccessWebhook(reason) {
+        if (webhookUrl) {
+            let webhookData = createUnsuccessWebhookData(mail, pass, 'Аккаунт создан, но номер телефона не подтвержден', reason)
+            await sendWebhook(webhookData)
+        }
+    }
+
+    async function unsuccessWebhook(reason) {
+        if (webhookUrl) {
+            let webhookData = createUnsuccessWebhookData(mail, pass, 'Аккаунт не создан', reason)
+            await sendWebhook(webhookData)
         }
     }
 
@@ -357,52 +368,6 @@ async function ChangeNumberStatus(service, id, status) {
     }
 }
 
-function createWebhookData(mail, pass, title) {
-    let color;
-    if (title === 'Аккаунт не создан' || title === 'Аккаунт уже существует') {
-        color = 13239043;
-    } else if (title === 'Аккаунт создан') {
-        color = 248362;
-    } else {
-        color = 16245504;
-    }
-
-    return {
-        "embeds": [
-            {
-                "title": `${title}`,
-                "description": `${mail} : ${pass}`,
-                "color": color,
-                "footer": {
-                    "text": "NikeRuAccGen"
-                },
-                "timestamp": `${new Date().toISOString()}`
-            }
-        ],
-        "username": "NikeRuAccountGenerator",
-        "avatar_url": "https://i.imgur.com/83hGFEg.png"
-    }
-}
-
-async function sendWebhook(webhookUrl, webhookData) {
-    try {
-        let response = await fetch(webhookUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json;charset=utf-8'
-            },
-            body: JSON.stringify(webhookData)
-        })
-
-        if (response.ok) {
-            return 'Вебхук отправлен'
-        } else {
-            throw new Error(`Webhook не отправлен, статус - ${response.status}`)
-        }
-    } catch (e) {
-        console.error(_colors.red(`\n${e.message}`))
-    }
-}
 
 function getProxy(i) {
     return new Promise(function (resolve, reject) {
