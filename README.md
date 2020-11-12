@@ -1,4 +1,7 @@
 # Генератор аккаунтов на Nike RU
+
+[![Travis][build-badge]][build] [![CodeFactor][codefactor-badge]][mark]
+
 Скрипт, для создания аккаунтов на Nike RU, с поддержкой сервисов, по приему СМС - [CheapSMS](https://cheapsms.ru/), 
 [SMS-ACTIVATE](https://sms-activate.ru/) и [GetSMS](https://getsms.online/ru/), а также c поддержкой
 заполнения данных доставки \ платежки в аккаунтах на gs.nike.com
@@ -83,3 +86,10 @@ SMS-ACTIVATE на CheapSMS, где номера стоят дешевле.
 Что отобразится в Discord:
 
 ![Imgur](https://imgur.com/Mbe0p2C.png)
+
+
+[build-badge]: https://travis-ci.com/whoisYeshua/NikeRuAccountGenerator.svg?branch=master
+[build]: https://travis-ci.com/whoisYeshua/NikeRuAccountGenerator
+
+[codefactor-badge]: https://www.codefactor.io/repository/github/whoisyeshua/nikeruaccountgenerator/badge
+[mark]: https://www.codefactor.io/repository/github/whoisyeshua/nikeruaccountgenerator
