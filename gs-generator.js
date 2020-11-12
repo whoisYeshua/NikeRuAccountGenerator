@@ -16,6 +16,7 @@ const csvPath = 'csv/gs-accs.csv';
 const proxyPath = 'proxy.txt';
 
 const {MajorLoginError, ReLoginError, MajorGsError, NumberNotConfirmed} = require('./lib/errors')
+const {createSuccessWebhookData, createUnsuccessWebhookData, sendWebhook} = require('./lib/discordWebhook')
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
 puppeteer.use(StealthPlugin())
@@ -63,7 +64,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
             await login()
             await addDataToGsPage()
             await page.waitForNavigation({waitUntil: 'networkidle2'})
-            await webhook('Данные сохранены')
+            await successWebhook()
 
             await browser.close();
         } else {
@@ -72,7 +73,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
 
     } catch (e) {
         console.error(_colors.red(`\n${e}`))
-        await webhook('Данные не сохранены')
+        await unsuccessWebhook(e.message)
         await browser.close();
         if (e instanceof ReLoginError) {
             console.log('Ждем 3 мин')
@@ -157,13 +158,6 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
             throw new Error('Количество попыток на вход в gs.nike превышено')
         }
     }
-    
-    async function webhook(title) {
-        if (webhookUrl) {
-            let webhookData = createWebhookData(mail, pass, title)
-            await sendWebhook(webhookUrl, webhookData)
-        }
-    }
 
     async function reLogin() {
         try {
@@ -185,46 +179,19 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
             }
         }
     }
-}
 
-function createWebhookData(mail, pass, title) {
-    let color;
-    if (title === 'Данные не сохранены') {
-        color = 13239043;
-    } else {
-        color = 248362;
+    async function successWebhook() {
+        if (webhookUrl) {
+            let webhookData = createSuccessWebhookData(mail, pass, 'Данные сохранены')
+            await sendWebhook(webhookUrl, webhookData)
+        }
     }
 
-    return {
-        "embeds": [
-            {
-                "title": `${title}`,
-                "description": `${mail} : ${pass}`,
-                "color": color,
-                "footer": {
-                    "text": "NikeRuAccGen"
-                },
-                "timestamp": `${new Date().toISOString()}`
-            }
-        ],
-        "username": "NikeRuAccountGenerator",
-        "avatar_url": "https://i.imgur.com/83hGFEg.png"
-    }
-}
-
-async function sendWebhook(webhookUrl, webhookData) {
-    let response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json;charset=utf-8'
-        },
-        body: JSON.stringify(webhookData)
-    })
-
-    if (response.ok) {
-        return 'Вебхук отправлен'
-    } else {
-        return `${response.status}`
+    async function unsuccessWebhook(reason) {
+        if (webhookUrl) {
+            let webhookData = createUnsuccessWebhookData(mail, pass, 'Данные не сохранены', reason)
+            await sendWebhook(webhookData)
+        }
     }
 }
 
