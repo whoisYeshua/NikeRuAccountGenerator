@@ -59,6 +59,8 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     const browser = await puppeteer.launch(PUPPETEER_OPTIONS);
     const page = await browser.newPage();
 
+    cardExpiry = reformatExpiryDate(cardExpiry);
+
     try {
         if (releaseUrl) {
             await login()
@@ -216,6 +218,14 @@ function getProxy(i) {
             }
         });
     })
+}
+
+function reformatExpiryDate(cardExpiry) {
+    cardExpiry = cardExpiry.replace(/[\\\/\-\s.,_|:]/g, '')
+    if (cardExpiry.length === 3) {
+        cardExpiry = `0${cardExpiry}`
+    }
+    return cardExpiry
 }
 
 function getAcc() {
