@@ -221,7 +221,7 @@ function getProxy(i) {
 }
 
 function reformatExpiryDate(cardExpiry) {
-    cardExpiry = cardExpiry.replace(/[\\\/\-\s.,_|:]/g, '')
+    cardExpiry = cardExpiry.replace(/[\\\-\s/.,_|:]/g, '')
     if (cardExpiry.length === 3) {
         cardExpiry = `0${cardExpiry}`
     }

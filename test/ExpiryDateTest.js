@@ -1,21 +1,21 @@
 let assert = require('assert');
 
 let str = [
-  "02\\28",
-  "02/28",
-  "02-28",
-  "02 28",
-  "02.28",
-  "02,28",
-  "02_28",
-  "02|28",
-  "02:28",
-  "228",
+    "02\\28",
+    "02-28",
+    "02 28",
+    "02/28",
+    "02.28",
+    "02,28",
+    "02_28",
+    "02|28",
+    "02:28",
+    "228",
 ];
 
 
 function reformatExpiryDate(cardExpiry) {
-    cardExpiry = cardExpiry.replace(/[\\\/\-\s.,_|:]/g, '')
+    cardExpiry = cardExpiry.replace(/[\\\-\s/.,_|:]/g, '')
     if (cardExpiry.length === 3) {
         cardExpiry = `0${cardExpiry}`
     }
