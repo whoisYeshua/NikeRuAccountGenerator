@@ -11,11 +11,11 @@ const _colors = require('colors');
 const config = require('./config.json');
 const webhookUrl = config.webhookUrl;
 const csvPath = 'csv/accs.csv';
-const proxyPath = 'proxy.txt';
 
 const {ReLoginError, AccountExistsError, MinorSmsError} = require('./lib/errors')
 const {createSuccessWebhookData, createUnsuccessWebhookData, sendWebhook} = require('./lib/discordWebhook')
 const {service, accessToSmsService, getCode} = require('./lib/smsAPI')
+const {getProxy} = require('./lib/getProxy')
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
 puppeteer.use(StealthPlugin())
@@ -45,13 +45,13 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
     };
 
     if (proxy) {
-        let {proxyIp, proxyPort, proxyUsername, proxyPassword} = proxy;
+        let {ip, port, username, password} = proxy;
         puppeteer.use(pluginProxy({
-            address: proxyIp,
-            port: proxyPort,
+            address: ip,
+            port: port,
             credentials: {
-                username: proxyUsername,
-                password: proxyPassword,
+                username: username,
+                password: password,
             }
         }));
     }
@@ -195,29 +195,6 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
     }
 }
 
-function getProxy(i) {
-    return new Promise(function (resolve, reject) {
-        fs.readFile(proxyPath, function (err, data) {
-            if (err) throw err;
-
-            const str = iconv.decode(Buffer.from(data), autoenc.detectEncoding(data).encoding)
-            if (str !== '') {
-                let proxies = str.toString().split('\r\n')
-                let [proxyIp, proxyPort, proxyUsername, proxyPassword] = proxies[i % proxies.length].split(':')
-                let proxy = {
-                    proxyIp: proxyIp,
-                    proxyPort: proxyPort,
-                    proxyUsername: proxyUsername,
-                    proxyPassword: proxyPassword
-                }
-                resolve(proxy)
-            } else {
-                reject()
-            }
-        });
-    })
-}
-
 function getAcc() {
     let OPTIONS = {};
 
@@ -237,15 +214,16 @@ function getAcc() {
 
             const str = iconv.decode(Buffer.from(data), autoenc.detectEncoding(data).encoding)
             const csvData = await neatCsv(str, OPTIONS)
+            const proxies = await getProxy()
 
             bar1.start(csvData.length, 0)
 
             for (let i in csvData) {
                 bar1.update(parseInt(i))
-                try {
-                    const proxy = await getProxy(i)
+                if (proxies.length) {
+                    let proxy = proxies[i % proxies.length]
                     await create(csvData[i], proxy)
-                } catch {
+                } else {
                     await create(csvData[i])
                 }
             }

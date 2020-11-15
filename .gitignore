@@ -1,4 +1,14 @@
 # Created by .ignore support plugin (hsz.mobi)
 
-.idea
-node_modules
+# Vendors
+node_modules/
+
+# Editors
+.idea/
+.vscode/
+
+# Personal Info
+.csv/
+config.json
+proxy.txt
+/csv/

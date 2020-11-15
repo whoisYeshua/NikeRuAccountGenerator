@@ -2,7 +2,6 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const LanguagePlugin = require('puppeteer-extra-plugin-stealth/evasions/navigator.languages');
 const pluginProxy = require('puppeteer-extra-plugin-proxy');
-const fetch = require('node-fetch');
 const fs = require('fs');
 const autoenc = require('node-autodetect-utf8-cp1251-cp866');
 const iconv = require('iconv-lite');
@@ -13,10 +12,10 @@ const config = require('./config.json');
 const releaseUrl = config.releaseUrl;
 const webhookUrl = config.webhookUrl;
 const csvPath = 'csv/gs-accs.csv';
-const proxyPath = 'proxy.txt';
 
-const {MajorLoginError, ReLoginError, MajorGsError, NumberNotConfirmed} = require('./lib/errors')
+const {ReLoginError, NumberNotConfirmed} = require('./lib/errors')
 const {createSuccessWebhookData, createUnsuccessWebhookData, sendWebhook} = require('./lib/discordWebhook')
+const {getProxy} = require('./lib/getProxy')
 
 const lp = LanguagePlugin({languages: ['ru-RU', 'ru']})
 puppeteer.use(StealthPlugin())
@@ -45,13 +44,13 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     };
 
     if (proxy) {
-        let {proxyIp, proxyPort, proxyUsername, proxyPassword} = proxy;
+        let {ip, port, username, password} = proxy;
         puppeteer.use(pluginProxy({
-            address: proxyIp,
-            port: proxyPort,
+            address: ip,
+            port: port,
             credentials: {
-                username: proxyUsername,
-                password: proxyPassword,
+                username: username,
+                password: password,
             }
         }));
     }
@@ -197,29 +196,6 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     }
 }
 
-function getProxy(i) {
-    return new Promise(function (resolve, reject) {
-        fs.readFile(proxyPath, function (err, data) {
-            if (err) throw err;
-
-            const str = iconv.decode(Buffer.from(data), autoenc.detectEncoding(data).encoding)
-            if (str !== '') {
-                let proxies = str.toString().split('\r\n')
-                let [proxyIp, proxyPort, proxyUsername, proxyPassword] = proxies[i % proxies.length].split(':')
-                let proxy = {
-                    proxyIp: proxyIp,
-                    proxyPort: proxyPort,
-                    proxyUsername: proxyUsername,
-                    proxyPassword: proxyPassword
-                }
-                resolve(proxy)
-            } else {
-                reject()
-            }
-        });
-    })
-}
-
 function reformatExpiryDate(cardExpiry) {
     cardExpiry = cardExpiry.replace(/[\\\-\s/.,_|:]/g, '')
     if (cardExpiry.length === 3) {
@@ -247,15 +223,16 @@ function getAcc() {
 
             const str = iconv.decode(Buffer.from(data), autoenc.detectEncoding(data).encoding)
             const csvData = await neatCsv(str, OPTIONS)
+            const proxies = await getProxy()
 
             bar1.start(csvData.length, 0)
 
             for (let i in csvData) {
                 bar1.update(parseInt(i))
-                try {
-                    const proxy = await getProxy(i)
+                if (proxies.length) {
+                    let proxy = proxies[i % proxies.length]
                     await create(csvData[i], proxy)
-                } catch {
+                } else {
                     await create(csvData[i])
                 }
             }

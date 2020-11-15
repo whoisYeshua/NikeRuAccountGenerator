@@ -1,6 +1,6 @@
-let assert = require('assert');
+const assert = require('assert');
 
-let str = [
+const str = [
     "02\\28",
     "02-28",
     "02 28",
