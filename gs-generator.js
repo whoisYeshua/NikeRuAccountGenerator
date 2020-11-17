@@ -36,10 +36,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     const PUPPETEER_OPTIONS = {
         headless: false,
         slowMo: 75,
-        defaultViewport: {
-            width: width,
-            height: height
-        },
+        defaultViewport: {width, height},
         args: [`--window-size=${width},${height}`]
     };
 

@@ -6,9 +6,3 @@ node_modules/
 # Editors
 .idea/
 .vscode/
-
-# Personal Info
-.csv/
-config.json
-proxy.txt
-/csv/
