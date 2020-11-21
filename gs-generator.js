@@ -8,9 +8,7 @@ const iconv = require('iconv-lite');
 const neatCsv = require('neat-csv');
 const cliProgress = require('cli-progress');
 const _colors = require('colors');
-const config = require('./config.json');
-const releaseUrl = config.releaseUrl;
-const webhookUrl = config.webhookUrl;
+const {releaseUrl, webhookUrl} = require('./config.json');
 const csvPath = 'csv/gs-accs.csv';
 
 const {ReLoginError, NumberNotConfirmed} = require('./lib/errors')

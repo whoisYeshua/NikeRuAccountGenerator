@@ -8,8 +8,7 @@ const iconv = require('iconv-lite');
 const neatCsv = require('neat-csv');
 const cliProgress = require('cli-progress');
 const _colors = require('colors');
-const config = require('./config.json');
-const webhookUrl = config.webhookUrl;
+const {webhookUrl} = require('./config.json');
 const csvPath = 'csv/accs.csv';
 
 const {ReLoginError, AccountExistsError, MinorSmsError} = require('./lib/errors')
