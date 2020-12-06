@@ -90,7 +90,6 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
             } else {
                 await page.click('li:nth-child(2) > input[type="button"]');
             }
-            await page.click('.checkbox');
             await page.waitForTimeout(500);
 
             await page.click('.joinSubmit.nike-unite-component > input[type="button"]')
@@ -175,7 +174,6 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
             await page.click('.nike-unite-error-close > input[type="button"]')
             await page.waitForTimeout(500)
 
-            await page.click('.checkbox')
             await page.waitForTimeout(500);
 
             await page.click('.joinSubmit.nike-unite-component > input[type="button"]')
