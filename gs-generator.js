@@ -179,7 +179,7 @@ async function create({mail, pass, firstName, lastName, middleName, addressLine1
     async function successWebhook() {
         if (webhookUrl) {
             let webhookData = createSuccessWebhookData(mail, pass, 'Данные сохранены')
-            await sendWebhook(webhookUrl, webhookData)
+            await sendWebhook(webhookData)
         }
     }
 

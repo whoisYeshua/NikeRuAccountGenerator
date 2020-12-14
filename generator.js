@@ -150,7 +150,7 @@ async function create({mail, pass, firstName, lastName, birthday, gender}, proxy
     async function successWebhook() {
         if (webhookUrl) {
             let webhookData = createSuccessWebhookData(mail, pass, 'Аккаунт создан')
-            await sendWebhook(webhookUrl, webhookData)
+            await sendWebhook(webhookData)
         }
     }
 
